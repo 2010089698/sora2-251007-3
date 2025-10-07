@@ -19,22 +19,20 @@
           <textarea id="prompt" name="prompt" required minlength="4" placeholder="例: 夕暮れの東京をドローンで撮影したような映像"></textarea>
 
           <div class="form-grid">
-            <label for="aspect_ratio">アスペクト比</label>
-            <select id="aspect_ratio" name="aspect_ratio">
-              <option value="16:9">16:9 (横長)</option>
-              <option value="9:16">9:16 (縦長)</option>
-              <option value="1:1">1:1 (スクエア)</option>
-              <option value="4:3">4:3</option>
+            <label for="seconds">秒数</label>
+            <select id="seconds" name="seconds">
+              <option value="4">4 秒</option>
+              <option value="8" selected>8 秒</option>
+              <option value="12">12 秒</option>
             </select>
 
-            <label for="duration">秒数</label>
-            <input type="number" id="duration" name="duration" value="8" min="1" max="60" />
-
-            <label for="format">形式</label>
-            <select id="format" name="format">
-              <option value="mp4">mp4</option>
-              <option value="mov">mov</option>
-              <option value="webm">webm</option>
+            <label for="size">解像度</label>
+            <select id="size" name="size">
+              <option value="480x480">480x480 (スクエア)</option>
+              <option value="720x1280">720x1280 (縦長 HD)</option>
+              <option value="1080x1920">1080x1920 (縦長 FHD)</option>
+              <option value="1920x1080" selected>1920x1080 (横長 FHD)</option>
+              <option value="2560x1440">2560x1440 (横長 QHD)</option>
             </select>
           </div>
 

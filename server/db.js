@@ -17,9 +17,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS video_jobs (
     id TEXT PRIMARY KEY,
     prompt TEXT NOT NULL,
-    aspect_ratio TEXT,
-    duration REAL,
-    format TEXT,
+    seconds INTEGER,
+    size TEXT,
     sora_job_id TEXT NOT NULL,
     status TEXT NOT NULL,
     assets_json TEXT,
@@ -31,10 +30,10 @@ db.exec(`
 
 const insertStmt = db.prepare(`
   INSERT INTO video_jobs (
-    id, prompt, aspect_ratio, duration, format, sora_job_id, status, assets_json,
+    id, prompt, seconds, size, sora_job_id, status, assets_json,
     error_message, created_at, updated_at
   ) VALUES (
-    @id, @prompt, @aspect_ratio, @duration, @format, @sora_job_id, @status, @assets_json,
+    @id, @prompt, @seconds, @size, @sora_job_id, @status, @assets_json,
     @error_message, @created_at, @updated_at
   )
 `);
@@ -66,9 +65,8 @@ function mapRow(row) {
   return {
     id: row.id,
     prompt: row.prompt,
-    aspect_ratio: row.aspect_ratio,
-    duration: row.duration,
-    format: row.format,
+    seconds: row.seconds,
+    size: row.size,
     sora_job_id: row.sora_job_id,
     status: row.status,
     assets: row.assets_json ? JSON.parse(row.assets_json) : [],
@@ -78,15 +76,14 @@ function mapRow(row) {
   };
 }
 
-function insertJob({ prompt, aspect_ratio, duration, format, sora_job_id, status, assets, error_message }) {
+function insertJob({ prompt, seconds, size, sora_job_id, status, assets, error_message }) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   insertStmt.run({
     id,
     prompt,
-    aspect_ratio: aspect_ratio || null,
-    duration: Number.isFinite(duration) ? duration : null,
-    format: format || null,
+    seconds: Number.isFinite(seconds) ? Number(seconds) : null,
+    size: size || null,
     sora_job_id,
     status,
     assets_json: assets && assets.length ? JSON.stringify(assets) : null,

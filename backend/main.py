@@ -119,6 +119,8 @@ async def _poll_once(client: OpenAIVideosClient) -> None:
             status = response.get("status", job.status)
             job.status = status
             job.updated_at = datetime.utcnow()
+            job.seconds = response.get("seconds") or job.seconds
+            job.size = response.get("size") or job.size
             if status == VideoStatusEnum.COMPLETED.value:
                 logger.info("Job %s completed", job.id)
                 job.error_message = None
@@ -154,14 +156,13 @@ async def create_video(
     db: Session = Depends(get_db),
     client: OpenAIVideosClient = Depends(get_openai_client),
 ):
-    payload = {"prompt": request.prompt}
-    if request.duration is not None:
-        payload["duration"] = request.duration
-    if request.format is not None:
-        payload["format"] = request.format
-    size = aspect_ratio_to_resolution(request.aspect_ratio)
-    if size is not None:
-        payload["size"] = size
+    payload = {
+        "prompt": request.prompt,
+        "seconds": int(request.seconds.value),
+    }
+    normalized_size = aspect_ratio_to_resolution(request.size.value)
+    size_value = normalized_size or request.size.value
+    payload["size"] = size_value
     try:
         response = await client.create_video(payload)
     except httpx.HTTPStatusError as exc:
@@ -176,9 +177,8 @@ async def create_video(
         prompt=request.prompt,
         sora_job_id=response["id"],
         status=response.get("status", VideoStatusEnum.QUEUED.value),
-        aspect_ratio=request.aspect_ratio,
-        duration=request.duration,
-        format=request.format,
+        seconds=int(request.seconds.value),
+        size=size_value,
     )
     db.add(job)
     db.commit()
@@ -223,13 +223,32 @@ async def get_video_media(job_id: str, db: Session = Depends(get_db)):
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 
-def aspect_ratio_to_resolution(aspect_ratio: Optional[str]) -> Optional[str]:
-    if aspect_ratio is None:
+OFFICIAL_SIZES = {
+    "480x480",
+    "720x1280",
+    "1080x1920",
+    "1920x1080",
+    "2560x1440",
+}
+
+
+def aspect_ratio_to_resolution(preference: Optional[str]) -> Optional[str]:
+    if preference is None:
         return None
+    value = preference.strip()
+    if value in OFFICIAL_SIZES:
+        return value
     presets = {
-        "16:9": "1920x1080",
+        "1:1": "480x480",
+        "square": "480x480",
         "9:16": "1080x1920",
-        "1:1": "1024x1024",
-        "4:3": "1440x1080",
+        "portrait": "1080x1920",
+        "vertical": "1080x1920",
+        "16:9": "1920x1080",
+        "landscape": "1920x1080",
+        "4:3": "1920x1080",
     }
-    return presets.get(aspect_ratio, aspect_ratio)
+    resolved = presets.get(value)
+    if resolved in OFFICIAL_SIZES:
+        return resolved
+    return None
