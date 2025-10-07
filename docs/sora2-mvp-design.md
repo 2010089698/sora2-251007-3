@@ -33,20 +33,20 @@
   - `POST /api/videos` — validate prompt, forward to OpenAI Videos API (`POST /v1/videos`), persist job metadata.
   - `GET /api/videos` — return all stored jobs ordered by creation date.
   - `GET /api/videos/:id` — fetch a single job record.
-  - `GET /api/videos/:id/stream` — proxy the first asset stream/download URL for convenience.
+  - `GET /api/videos/:id/media` — proxy `GET /v1/videos/{id}/content` with the requested `variant`.
 - **Persistence**
-  - SQLite via `better-sqlite3` stores job fields: prompt, Sora job ID, status, assets, error message, timestamps.
+  - SQLite via `better-sqlite3` stores job fields: prompt, Sora job ID, status, available variants, error message, timestamps.
 - **OpenAI Integration**
 - Uses the Videos API with headers `Authorization: Bearer <OPENAI_API_KEY>` and `OpenAI-Beta: sora2=v1`,
   targeting the `sora-2` model by default (overrideable via `OPENAI_VIDEO_MODEL`, e.g. `sora-2-pro`).
-  - Normalizes heterogeneous asset payloads so the frontend receives consistent `{ preview_url, download_url, duration_seconds, resolution }` metadata.
+  - When a job transitions to `completed`, record the `variants` list reported by the Videos API. Binary media is retrieved on-demand via `GET /v1/videos/{video_id}/content?variant=...`; no asset URLs are cached locally.
 - **Polling Loop**
   - `setInterval` every 10s queries pending jobs (`status` not in `completed/failed/cancelled`).
-  - Updates local records when OpenAI reports status changes or when assets become available.
+  - Updates local records when OpenAI reports status changes or when new content variants become available.
 
 ## 5. Frontend Components (Vanilla JS)
 - **Prompt Form** — collects prompt text together with the officially supported `seconds` (4 / 8 / 12) and `size` presets.
-- **Job List** — polls `GET /api/videos` every 10s, showing status badges, metadata, and inline `<video>` playback when assets exist.
+- **Job List** — polls `GET /api/videos` every 10s, showing status badges, metadata, and inline `<video>` playback once `variants` are available.
 - **Feedback Messages** — notifies users about submission success/failure.
 
 ## 6. Data Model
@@ -58,7 +58,7 @@
 | `size` | Requested resolution preset (`480x480`, `720x1280`, `1080x1920`, `1920x1080`, `2560x1440`). |
 | `sora_job_id` | Identifier returned by OpenAI. |
 | `status` | `queued`, `in_progress`, `completed`, `failed`, etc. |
-| `assets` | JSON array of normalized asset metadata. |
+| `variants` | JSON array of variant identifiers available for download/streaming. |
 | `error_message` | Failure reason if reported by the API. |
 | `created_at` / `updated_at` | ISO timestamps for auditing. |
 
@@ -83,7 +83,7 @@ POST /api/videos
     "size": "1920x1080",
     "status": "queued",
     "sora_job_id": "job-abc123",
-    "assets": []
+    "variants": []
   }
 }
 ```
@@ -97,14 +97,7 @@ GET /api/videos
       "seconds": 8,
       "size": "1920x1080",
       "status": "completed",
-      "assets": [
-        {
-          "preview_url": "https://.../stream.m3u8",
-          "download_url": "https://.../video.mp4",
-          "resolution": "1920x1080",
-          "duration_seconds": 8
-        }
-      ]
+      "variants": ["mp4_1080p", "gif", "thumbnail"]
     }
   ]
 }
@@ -124,6 +117,6 @@ GET /api/videos
 ## 10. Roadmap Enhancements
 - Replace polling with webhook callbacks if/when OpenAI provides them.
 - Add user authentication and per-user job scoping.
-- Persist video assets to an external object store and serve signed URLs.
+- Persist fetched video variants to an external object store and serve signed URLs.
 - Add queue workers if polling or downloads become resource-intensive.
 - Introduce integration tests using a mocked Videos API.

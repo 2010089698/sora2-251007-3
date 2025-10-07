@@ -69,17 +69,25 @@ function renderJobs(jobs) {
     const updatedAt = new Date(job.updated_at).toLocaleString();
 
     let mediaSection = "";
-    if (job.assets && job.assets.length > 0) {
-      const asset = job.assets[0];
-      const source = asset.preview_url || asset.download_url;
+    const variants = Array.isArray(job.variants) ? job.variants : [];
+    if (job.status === "completed" && variants.length > 0) {
+      const defaultVariant = variants[0];
+      const mediaUrl = `/api/videos/${job.id}/media?variant=${encodeURIComponent(defaultVariant)}`;
+      const variantLinks = variants
+        .map(
+          (variant) =>
+            `<a class="secondary" href="/api/videos/${job.id}/media?variant=${encodeURIComponent(
+              variant
+            )}" target="_blank" rel="noopener">${variant}</a>`
+        )
+        .join(" ");
       mediaSection = `
-        <video controls src="${source}" preload="none"></video>
+        <video controls src="${mediaUrl}" preload="none"></video>
         <div class="job-meta">
-        <small>解像度: ${asset.resolution || job.size || "-"}</small><br/>
-          <small>長さ: ${asset.duration_seconds || job.seconds || "-"} 秒</small>
+          <small>利用可能なバリアント: ${variants.join(", ")}</small>
         </div>
         <div class="job-actions">
-          ${asset.download_url ? `<a class="secondary" href="${asset.download_url}" target="_blank" rel="noopener">ダウンロード</a>` : ""}
+          ${variantLinks ? `<small>ダウンロード: ${variantLinks}</small>` : ""}
         </div>
       `;
     }

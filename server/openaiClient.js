@@ -10,34 +10,20 @@ function ensureApiKey() {
   return key;
 }
 
-function normalizeAssets(payload) {
-  const outputs = Array.isArray(payload?.output)
-    ? payload.output
-    : Array.isArray(payload?.data)
-    ? payload.data
-    : Array.isArray(payload?.assets)
-    ? payload.assets
+function normalizeVariants(payload) {
+  const variants = Array.isArray(payload?.variants)
+    ? payload.variants
+    : Array.isArray(payload?.available_variants)
+    ? payload.available_variants
     : [];
-  return outputs
-    .map((item) => {
-      const sources = [
-        item.preview_url,
-        item.streaming_url,
-        item.url,
-        item.download_url,
-      ].filter(Boolean);
 
-      return {
-        id: item.id || item.asset_id || item.file_id || null,
-        format: item.format || item.mime_type || null,
-        preview_url: item.preview_url || item.streaming_url || item.url || null,
-        download_url: item.download_url || item.url || null,
-        resolution: item.resolution || item.metadata?.resolution || null,
-        duration_seconds: item.duration_seconds || item.duration || item.metadata?.duration_seconds || null,
-        sources,
-      };
-    })
-    .filter((asset) => asset.preview_url || asset.download_url);
+  return variants
+    .map((variant) =>
+      typeof variant === 'string'
+        ? variant
+        : variant?.name || variant?.id || null
+    )
+    .filter(Boolean);
 }
 
 function normalizeJobResponse(payload) {
@@ -48,7 +34,7 @@ function normalizeJobResponse(payload) {
     error_message: payload.error?.message || null,
     seconds: payload.seconds || payload.duration || null,
     size: payload.size || payload.resolution || null,
-    assets: normalizeAssets(payload),
+    variants: normalizeVariants(payload),
   };
 }
 
@@ -104,17 +90,27 @@ async function retrieveVideoJob(jobId) {
   return normalizeJobResponse(payload);
 }
 
-async function fetchAssetStream(url) {
+function buildContentUrl(videoId, variant) {
+  const url = new URL(`${API_BASE_URL}/videos/${videoId}/content`);
+  if (variant) {
+    url.searchParams.set('variant', variant);
+  }
+  return url.toString();
+}
+
+async function streamVideoContent(videoId, variant) {
   const apiKey = ensureApiKey();
+  const url = buildContentUrl(videoId, variant);
   const response = await fetch(url, {
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'OpenAI-Beta': 'sora2=v1',
     },
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch asset (${response.status})`);
+    const errorText = await response.text();
+    throw new Error(errorText || `Failed to fetch content for video ${videoId} (${response.status})`);
   }
 
   return response;
@@ -123,5 +119,5 @@ async function fetchAssetStream(url) {
 module.exports = {
   createVideoJob,
   retrieveVideoJob,
-  fetchAssetStream,
+  streamVideoContent,
 };
