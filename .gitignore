@@ -1,5 +1,4 @@
-__pycache__/
-*.pyc
-.sora2.db
-.venv/
+node_modules/
+server/data/
 .env
+.DS_Store

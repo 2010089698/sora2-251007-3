@@ -1,47 +1,47 @@
 # Sora2 Video Generation MVP
 
-このリポジトリは、OpenAI の Sora2 動画生成 API を利用した MVP Web アプリです。テキストプロンプトから動画生成ジョブを作成し、進捗をポーリングし、完成した動画を再生・ダウンロードできます。
+このリポジトリは、OpenAI Sora2 動画生成 API を利用してテキストから動画を生成・再生できる MVP Web アプリです。Node.js ベースのバックエンドが OpenAI Videos API と連携し、ジョブの状態を定期的にポーリングしてフロントエンドに結果を提供します。
 
 ## 構成
 
-- **backend/**: FastAPI ベースの BFF。動画生成リクエストの転送、ジョブの永続化、OpenAI API のポーリングを担当します。
-- **frontend/**: バニラ HTML/CSS/JS で実装したシングルページ UI。プロンプト送信、ジョブ一覧表示、動画再生を提供します。
-- **docs/**: アーキテクチャ設計資料。
+- **server/**: Express バックエンド。動画生成リクエストの転送、SQLite によるジョブ永続化、OpenAI Videos API のポーリングを担当します。
+- **frontend/**: バニラ HTML/CSS/JS で実装した UI。プロンプト送信、ジョブ一覧表示、生成済み動画の再生・ダウンロードを提供します。
+- **docs/**: アーキテクチャおよび設計資料。
 
 ## 必要条件
 
-- Python 3.11 以上
+- Node.js 18 以上
+- npm
 - OpenAI API キー (環境変数 `OPENAI_API_KEY`)
 
 ## セットアップ
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+npm install
 export OPENAI_API_KEY="sk-..."
-uvicorn backend.main:app --reload
+npm run dev
 ```
 
 サーバー起動後、ブラウザで `http://localhost:8000/` にアクセスするとフロントエンドが表示されます。
 
-## 環境変数
+### 主要な環境変数
 
 | 変数名 | 説明 | デフォルト |
 | ------ | ---- | ---------- |
 | `OPENAI_API_KEY` | OpenAI API キー | 必須 |
-| `DATABASE_URL` | SQLAlchemy 対応の DB URL | `sqlite:///./sora2.db` |
-| `OPENAI_API_BASE` | OpenAI API のベース URL | `https://api.openai.com/v1` |
-| `OPENAI_VIDEO_MODEL` | 使用する動画モデル名 | `sora-1.0` |
-| `OPENAI_VIDEO_BETA_HEADER` | ベータ機能ヘッダー | `video-generation=2` |
-| `POLL_INTERVAL_SECONDS` | ジョブポーリング間隔(秒) | `10` |
+| `OPENAI_API_BASE_URL` | OpenAI API ベース URL | `https://api.openai.com/v1` |
+| `PORT` | Express サーバーのポート番号 | `8000` |
+| `POLL_INTERVAL_MS` | ジョブ状態をポーリングする間隔 (ミリ秒) | `10000` |
+
+`.env` ファイルを作成すると自動的に読み込まれます。
 
 ## テスト
 
-現時点では自動テストは未整備です。FastAPI の組み込みドキュメント (`/docs`) を用いて API エンドポイントを確認できます。
+現時点では自動テストは未整備です。`npm run dev` を実行し、ブラウザまたは API クライアントからエンドポイントを確認してください。
 
-## 今後の改善
+## 今後の改善アイデア
 
-- 認証・認可の実装
-- E2E テスト自動化
-- 失敗ジョブの再実行やキャンセル機能
+- 認証・認可の導入
+- 失敗ジョブの再実行やキャンセル操作
+- OpenAI API からのイベント駆動型更新 (Webhook) 対応
+- CI による Lint / Test の自動化

@@ -1,139 +1,126 @@
-# Sora2 Video Generation & Playback MVP Design
+# Sora2 Video Generation & Playback MVP Design (Node.js Edition)
 
 ## 1. Goal & Scope
-- Provide a browser-based MVP that lets users describe a video, submit the prompt to OpenAI's Sora2 video generation API, monitor job status, and play the resulting video once ready.
-- Support authenticated access, job persistence, and minimal observability to debug failures.
-- Optimize for rapid prototyping while keeping the architecture extensible for future features (prompt templates, collaboration, etc.).
+- Provide a lightweight browser experience that lets a user describe a video, submit the prompt to OpenAI's Sora2 Videos API, monitor progress, and watch the final output.
+- Minimize moving parts: a single Express server plus static frontend assets.
+- Keep the codebase ready for future enhancements such as authentication or multi-user support.
 
 ## 2. User Stories
-1. **Prompt Submission:** As an authenticated creator, I want to describe the desired video and trigger generation so that I can produce new content with Sora2.
-2. **Generation Status:** As a creator, I want to see the progress and any errors from the Sora2 job so that I know when the video is ready or needs attention.
-3. **Playback & Download:** As a creator, I want to stream or download the generated video so that I can review and share it.
-4. **Prompt History (Stretch):** As a creator, I want to revisit my recent prompts and outputs to reuse or iterate on them.
+1. **Prompt Submission:** As a creator, I want to submit a text prompt so that Sora2 can generate a new video for me.
+2. **Generation Status:** As a creator, I want to see whether my video is queued, processing, completed, or failed.
+3. **Playback & Download:** As a creator, I want to stream or download the finished video in my browser.
+4. **History Review (Stretch):** As a creator, I want to revisit my recent prompts and results for iteration.
 
 ## 3. High-Level Architecture
 ```
-+-----------------+        +---------------------+        +---------------------+
-|  React SPA (UI) | <----> |  BFF / API Gateway  | <----> |  Worker & Sora2 API |
-+-----------------+        +---------------------+        +---------------------+
-        |                           |                              |
-        | 1. Prompt submission      | 2. Queue job + persist       | 3. Poll Sora2 jobs
-        | 4. Playback request       | 5. Serve signed URLs         | 6. Store video in object store
++----------------------+           +---------------------------+
+|  Static Frontend UI  | <------> |  Express API + Poller     |
+| (Vanilla HTML/JS/CSS)|           |  (Node.js + SQLite)       |
++----------------------+           +---------------------------+
+                                               |
+                                               v
+                                     +--------------------+
+                                     |  OpenAI Videos API |
+                                     +--------------------+
 ```
 
-### 3.1 Frontend (React + Vite or Next.js CSR)
-- Components: PromptForm, JobStatusList, VideoPlayer.
-- Uses REST endpoints exposed by the backend to create jobs, poll job status, and fetch signed playback URLs.
-- Minimal state management with React Query for data fetching + caching.
+- The Express app serves both the REST API and the static frontend assets.
+- Jobs are stored in SQLite for persistence across restarts.
+- A background timer within the same Node.js process polls OpenAI for job updates.
 
-### 3.2 Backend (Node.js / Express BFF)
-- Handles authentication (OpenID Connect via Auth0/Clerk) and issues session JWT cookies.
-- Provides REST endpoints:
-  - `POST /api/videos`: create generation job by forwarding prompt to OpenAI Videos API.
-  - `GET /api/videos/:jobId`: returns job metadata and latest status (cached in DB).
-  - `GET /api/videos/:jobId/media`: returns signed URL for playback from object storage (Cloudflare R2/S3).
-- Stores job records and prompt metadata in PostgreSQL via Prisma ORM.
-- Pushes long-running processing to a lightweight queue (BullMQ + Redis) to poll Sora2 job status asynchronously.
+## 4. Backend Components (Express)
+- **Routes**
+  - `POST /api/videos` — validate prompt, forward to OpenAI Videos API (`POST /v1/videos`), persist job metadata.
+  - `GET /api/videos` — return all stored jobs ordered by creation date.
+  - `GET /api/videos/:id` — fetch a single job record.
+  - `GET /api/videos/:id/stream` — proxy the first asset stream/download URL for convenience.
+- **Persistence**
+  - SQLite via `better-sqlite3` stores job fields: prompt, Sora job ID, status, assets, error message, timestamps.
+- **OpenAI Integration**
+  - Uses the Videos API with headers `Authorization: Bearer <OPENAI_API_KEY>` and `OpenAI-Beta: sora2=v1`.
+  - Normalizes heterogeneous asset payloads so the frontend receives consistent `{ preview_url, download_url, duration_seconds, resolution }` metadata.
+- **Polling Loop**
+  - `setInterval` every 10s queries pending jobs (`status` not in `completed/failed/cancelled`).
+  - Updates local records when OpenAI reports status changes or when assets become available.
 
-### 3.3 Worker Service
-- Dequeues pending jobs, calls Sora2 status endpoint, updates DB, and downloads completed assets to object storage.
-- Cleans up failed jobs and surfaces errors to the UI.
+## 5. Frontend Components (Vanilla JS)
+- **Prompt Form** — collects prompt text, aspect ratio, optional duration, and format.
+- **Job List** — polls `GET /api/videos` every 10s, showing status badges, metadata, and inline `<video>` playback when assets exist.
+- **Feedback Messages** — notifies users about submission success/failure.
 
-### 3.4 Storage
-- PostgreSQL: jobs table, assets table, users table.
-- Object storage (S3-compatible) for raw video and thumbnail files.
+## 6. Data Model
+| Field | Description |
+|-------|-------------|
+| `id` | Local UUID for the job card displayed in the UI. |
+| `prompt` | Submitted text prompt. |
+| `aspect_ratio` | Optional aspect ratio passed to OpenAI. |
+| `duration` | Optional duration in seconds. |
+| `format` | Preferred output format (e.g., `mp4`). |
+| `sora_job_id` | Identifier returned by OpenAI. |
+| `status` | `queued`, `in_progress`, `completed`, `failed`, etc. |
+| `assets` | JSON array of normalized asset metadata. |
+| `error_message` | Failure reason if reported by the API. |
+| `created_at` / `updated_at` | ISO timestamps for auditing. |
 
-## 4. Integration with OpenAI Videos API
-
-### 4.1 Video Creation
-- Use `POST https://api.openai.com/v1/videos` with model `"gpt-4.1-preview"` or `"gpt-4o-mini-translation"` (replace with relevant Sora2 model once published).
-- Payload structure:
+## 7. API Payloads
+- **Create Video Request**
 ```json
+POST /api/videos
 {
-  "model": "sora-1.0",
-  "prompt": "Detailed natural language description of the video",
-  "size": "1920x1080",
+  "prompt": "A cozy campfire at night in the forest",
+  "aspect_ratio": "16:9",
   "duration": 8,
   "format": "mp4"
 }
 ```
-- Backend sets `Authorization: Bearer <OPENAI_API_KEY>` and optionally `OpenAI-Beta: video-generation=2` headers per docs.
-- Response includes a job `id` and initial `status` (e.g., `queued`). Persist this `id` to track the job.
+- **Create Video Response**
+```json
+201 Created
+{
+  "job": {
+    "id": "local-uuid",
+    "prompt": "A cozy campfire...",
+    "status": "queued",
+    "sora_job_id": "job-abc123",
+    "assets": []
+  }
+}
+```
+- **Job Listing**
+```json
+GET /api/videos
+{
+  "jobs": [
+    {
+      "id": "local-uuid",
+      "status": "completed",
+      "assets": [
+        {
+          "preview_url": "https://.../stream.m3u8",
+          "download_url": "https://.../video.mp4",
+          "resolution": "1920x1080",
+          "duration_seconds": 8
+        }
+      ]
+    }
+  ]
+}
+```
 
-### 4.2 Job Polling
-- Worker repeatedly calls `GET /v1/videos/{job_id}` to retrieve updated status (`queued`, `processing`, `completed`, `failed`).
-- When `status === "completed"`, response contains media asset URLs (e.g., `result.assets[0].download_url`).
-- Worker downloads the file, stores it in object storage, and records the storage key + metadata (duration, resolution, size).
+## 8. Error Handling & Observability
+- Request validation ensures `prompt` is provided; other fields are optional.
+- API errors from OpenAI are surfaced as 502 responses with message details.
+- Poller logs failures to the console; production deployments can redirect logs to CloudWatch, Datadog, etc.
 
-### 4.3 Streaming
-- For immediate playback without downloading, use the streaming URL returned by OpenAI if available, or serve the file via signed S3 URL.
-- The backend endpoint `/api/videos/:jobId/media` generates a signed URL that the frontend uses in the `<video>` tag.
+## 9. Deployment Considerations
+- Single container image (Node.js 18) running the Express app is sufficient.
+- Mount a persistent volume for `server/data/app.db`.
+- Configure environment variables (`OPENAI_API_KEY`, optional overrides for polling interval or API base URL).
+- Use a process manager (PM2, systemd) or platform auto-restart to keep the poller alive.
 
-### 4.4 Error Handling
-- If status is `failed`, the worker updates job record with `error_message` from the API response.
-- Frontend displays user-friendly error with option to retry.
-
-## 5. Data Model (Simplified)
-| Table | Fields |
-|-------|--------|
-| `users` | `id`, `auth_provider_id`, `email`, `created_at` |
-| `video_jobs` | `id`, `user_id`, `prompt`, `sora_job_id`, `status`, `error_message`, `created_at`, `updated_at` |
-| `video_assets` | `id`, `job_id`, `storage_key`, `playback_url`, `duration`, `resolution`, `file_size`, `created_at` |
-
-## 6. API Surface (Backend)
-- `POST /api/videos`
-  - Body: `{ prompt: string, size?: string, duration?: number, format?: string }`
-  - Response: `{ jobId: string, status: 'queued' }`
-- `GET /api/videos`
-  - Query: pagination options; returns list of jobs for current user.
-- `GET /api/videos/:jobId`
-  - Response: `{ jobId, prompt, status, errorMessage?, asset?: {...} }`
-- `GET /api/videos/:jobId/media`
-  - Response: `{ url: string, expiresAt: ISODate }`
-- `POST /api/videos/:jobId/retry`
-  - Re-enqueues a failed job.
-
-## 7. Frontend UX Flow
-1. User logs in via Auth0; frontend receives session cookie.
-2. PromptForm collects text prompt + optional duration/resolution.
-3. On submit, call `POST /api/videos` and show optimistic job card (status `queued`).
-4. React Query polls `GET /api/videos/:jobId` every few seconds until status is `completed` or `failed`.
-5. When completed, VideoPlayer component displays `<video src={signedUrl} controls />` fetched from `/api/videos/:jobId/media`.
-6. Allow download via `<a href={signedUrl} download>`.
-
-## 8. Security & Compliance
-- Store OpenAI API key in server-side secrets manager (e.g., Doppler, AWS Secrets Manager).
-- Enforce per-user access controls; ensure jobs/assets are scoped by `user_id`.
-- Generate short-lived signed URLs to prevent unauthorized sharing.
-- Log requests and responses (excluding sensitive data) for monitoring.
-- Rate-limit prompt submissions to prevent abuse.
-
-## 9. Observability & Operations
-- Centralized logging (Winston + Datadog).
-- Metrics: job counts by status, average time-to-complete, API error rates.
-- Alerts on high failure rates or long queue times.
-- Feature flags for experimental prompt templates or model parameters.
-
-## 10. Future Enhancements
-- Collaborative projects with shared job lists.
-- Prompt presets and AI-assisted prompt refinement.
-- Webhooks from OpenAI Videos API (if available) to replace polling.
-- Integration with editing tools for trimming or captioning.
-
-## 11. Development Plan
-1. Scaffold frontend (React + Vite) and backend (Express) with basic auth stub.
-2. Implement `POST /api/videos` calling Sora2 API and persisting job.
-3. Add worker polling + storage integration.
-4. Build frontend job list & video playback UI.
-5. Harden security, logging, and add retry flows.
-
-## 12. Testing Strategy
-- Unit tests for API client wrappers (mock OpenAI responses).
-- Integration tests for backend endpoints using Supertest with mocked queue/storage.
-- Cypress E2E test that submits a prompt and simulates job completion.
-
-## 13. Deployment
-- Host frontend on Vercel/Netlify; backend + worker on Fly.io or Render.
-- Use managed PostgreSQL (Neon/Supabase) and Redis (Upstash) for simplicity.
-- Configure CI/CD pipeline (GitHub Actions) with lint/test workflows.
-
+## 10. Roadmap Enhancements
+- Replace polling with webhook callbacks if/when OpenAI provides them.
+- Add user authentication and per-user job scoping.
+- Persist video assets to an external object store and serve signed URLs.
+- Add queue workers if polling or downloads become resource-intensive.
+- Introduce integration tests using a mocked Videos API.
