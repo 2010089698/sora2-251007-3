@@ -17,7 +17,7 @@ class OpenAIVideosClient:
         api_key: str,
         api_base: str = "https://api.openai.com/v1",
         timeout: float = 30.0,
-        model: str = "sora-1.0",
+        model: str = "sora-2",
         beta_header: str = "video-generation=2",
     ) -> None:
         self.api_key = api_key

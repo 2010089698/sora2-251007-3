@@ -1,4 +1,6 @@
 const API_BASE_URL = process.env.OPENAI_API_BASE_URL || 'https://api.openai.com/v1';
+const DEFAULT_VIDEO_MODEL = 'sora-2';
+const VIDEO_MODEL = process.env.OPENAI_VIDEO_MODEL || DEFAULT_VIDEO_MODEL;
 
 function ensureApiKey() {
   const key = process.env.OPENAI_API_KEY;
@@ -51,7 +53,7 @@ function normalizeJobResponse(payload) {
 async function createVideoJob({ prompt, aspect_ratio, duration, format }) {
   const apiKey = ensureApiKey();
   const body = {
-    model: 'gpt-video-1',
+    model: VIDEO_MODEL,
     prompt,
     aspect_ratio,
     duration,
