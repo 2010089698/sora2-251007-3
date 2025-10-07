@@ -37,7 +37,8 @@
 - **Persistence**
   - SQLite via `better-sqlite3` stores job fields: prompt, Sora job ID, status, assets, error message, timestamps.
 - **OpenAI Integration**
-  - Uses the Videos API with headers `Authorization: Bearer <OPENAI_API_KEY>` and `OpenAI-Beta: sora2=v1`.
+- Uses the Videos API with headers `Authorization: Bearer <OPENAI_API_KEY>` and `OpenAI-Beta: sora2=v1`,
+  targeting the `sora-2` model by default (overrideable via `OPENAI_VIDEO_MODEL`, e.g. `sora-2-pro`).
   - Normalizes heterogeneous asset payloads so the frontend receives consistent `{ preview_url, download_url, duration_seconds, resolution }` metadata.
 - **Polling Loop**
   - `setInterval` every 10s queries pending jobs (`status` not in `completed/failed/cancelled`).

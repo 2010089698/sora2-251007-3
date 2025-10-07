@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sora2.db")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
-OPENAI_MODEL = os.getenv("OPENAI_VIDEO_MODEL", "sora-1.0")
+OPENAI_MODEL = os.getenv("OPENAI_VIDEO_MODEL", "sora-2")
 OPENAI_BETA_HEADER = os.getenv("OPENAI_VIDEO_BETA_HEADER", "video-generation=2")
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "10"))
 

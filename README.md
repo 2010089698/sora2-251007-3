@@ -30,6 +30,7 @@ npm run dev
 | ------ | ---- | ---------- |
 | `OPENAI_API_KEY` | OpenAI API キー | 必須 |
 | `OPENAI_API_BASE_URL` | OpenAI API ベース URL | `https://api.openai.com/v1` |
+| `OPENAI_VIDEO_MODEL` | 使用する動画モデル (`sora-2` や `sora-2-pro` など) | `sora-2` |
 | `PORT` | Express サーバーのポート番号 | `8000` |
 | `POLL_INTERVAL_MS` | ジョブ状態をポーリングする間隔 (ミリ秒) | `10000` |
 
