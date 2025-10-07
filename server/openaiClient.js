@@ -8,43 +8,33 @@ function ensureApiKey() {
   return key;
 }
 
-function normalizeAssets(payload) {
-  const outputs = Array.isArray(payload?.output)
-    ? payload.output
-    : Array.isArray(payload?.data)
-    ? payload.data
-    : Array.isArray(payload?.assets)
-    ? payload.assets
+function extractContentMetadata(payload = {}) {
+  const root = payload.result || payload;
+  const variants = Array.isArray(root.content_variants)
+    ? root.content_variants
+    : Array.isArray(root.variants)
+    ? root.variants
     : [];
-  return outputs
-    .map((item) => {
-      const sources = [
-        item.preview_url,
-        item.streaming_url,
-        item.url,
-        item.download_url,
-      ].filter(Boolean);
-
-      return {
-        id: item.id || item.asset_id || item.file_id || null,
-        format: item.format || item.mime_type || null,
-        preview_url: item.preview_url || item.streaming_url || item.url || null,
-        download_url: item.download_url || item.url || null,
-        resolution: item.resolution || item.metadata?.resolution || null,
-        duration_seconds: item.duration_seconds || item.duration || item.metadata?.duration_seconds || null,
-        sources,
-      };
-    })
-    .filter((asset) => asset.preview_url || asset.download_url);
+  const defaultVariant =
+    root.default_variant || root.variant || (variants.length ? variants[0] : null);
+  return {
+    content_variant: defaultVariant || null,
+    content_token: root.content_token || root.download_token || null,
+    content_token_expires_at:
+      root.content_token_expires_at || root.token_expires_at || null,
+  };
 }
 
 function normalizeJobResponse(payload) {
   if (!payload) return null;
+  const metadata = extractContentMetadata(payload);
   return {
     id: payload.id,
     status: payload.status,
     error_message: payload.error?.message || null,
-    assets: normalizeAssets(payload),
+    content_variant: metadata.content_variant,
+    content_token: metadata.content_token,
+    content_token_expires_at: metadata.content_token_expires_at,
   };
 }
 
@@ -101,8 +91,16 @@ async function retrieveVideoJob(jobId) {
   return normalizeJobResponse(payload);
 }
 
-async function fetchAssetStream(url) {
+async function streamVideoContent(jobId, { variant, token } = {}) {
   const apiKey = ensureApiKey();
+  const url = new URL(`${API_BASE_URL}/videos/${jobId}/content`);
+  if (variant) {
+    url.searchParams.set('variant', variant);
+  }
+  if (token) {
+    url.searchParams.set('token', token);
+  }
+
   const response = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${apiKey}`,
@@ -111,7 +109,8 @@ async function fetchAssetStream(url) {
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch asset (${response.status})`);
+    const errorText = await response.text();
+    throw new Error(errorText || `Failed to stream video content (${response.status})`);
   }
 
   return response;
@@ -120,5 +119,5 @@ async function fetchAssetStream(url) {
 module.exports = {
   createVideoJob,
   retrieveVideoJob,
-  fetchAssetStream,
+  streamVideoContent,
 };

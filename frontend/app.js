@@ -70,17 +70,18 @@ function renderJobs(jobs) {
     const updatedAt = new Date(job.updated_at).toLocaleString();
 
     let mediaSection = "";
-    if (job.assets && job.assets.length > 0) {
-      const asset = job.assets[0];
-      const source = asset.preview_url || asset.download_url;
+    if (job.status === "completed") {
+      const variantQuery = job.content_variant ? `?variant=${encodeURIComponent(job.content_variant)}` : "";
+      const mediaUrl = `/api/videos/${job.id}/media${variantQuery}`;
+      const readyAt = job.content_ready_at ? new Date(job.content_ready_at).toLocaleString() : null;
       mediaSection = `
-        <video controls src="${source}" preload="none"></video>
+        <video controls src="${mediaUrl}" preload="none"></video>
         <div class="job-meta">
-          <small>解像度: ${asset.resolution || "-"}</small><br/>
-          <small>長さ: ${asset.duration_seconds || "-"} 秒</small>
+          <small>Variant: ${job.content_variant || "source"}</small><br/>
+          ${readyAt ? `<small>取得準備完了: ${readyAt}</small>` : ""}
         </div>
         <div class="job-actions">
-          ${asset.download_url ? `<a class="secondary" href="${asset.download_url}" target="_blank" rel="noopener">ダウンロード</a>` : ""}
+          <a class="secondary" href="${mediaUrl}" target="_blank" rel="noopener" download>ダウンロード</a>
         </div>
       `;
     }

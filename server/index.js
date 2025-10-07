@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 app.get('/api/videos', (req, res) => {
-  const jobs = db.listJobs();
+  const jobs = db.listJobs().map(stripSensitiveFields);
   res.json({ jobs });
 });
 
@@ -22,7 +22,7 @@ app.get('/api/videos/:id', (req, res) => {
     res.status(404).json({ error: 'Job not found' });
     return;
   }
-  res.json({ job });
+  res.json({ job: stripSensitiveFields(job) });
 });
 
 app.post('/api/videos', async (req, res) => {
@@ -45,41 +45,52 @@ app.post('/api/videos', async (req, res) => {
       format,
       sora_job_id: remoteJob.id,
       status: remoteJob.status || 'queued',
-      assets: remoteJob.assets || [],
+      content_variant: remoteJob.content_variant || null,
+      content_ready_at: remoteJob.status === 'completed' ? new Date().toISOString() : null,
+      content_token: remoteJob.content_token || null,
+      content_token_expires_at: remoteJob.content_token_expires_at || null,
       error_message: remoteJob.error_message || null,
     });
 
-    res.status(201).json({ job: jobRecord });
+    res.status(201).json({ job: stripSensitiveFields(jobRecord) });
   } catch (error) {
     console.error('Failed to create video job:', error.message);
     res.status(502).json({ error: error.message });
   }
 });
 
-app.get('/api/videos/:id/stream', async (req, res) => {
+app.get('/api/videos/:id/media', async (req, res) => {
   const job = db.getJob(req.params.id);
   if (!job) {
     res.status(404).json({ error: 'Job not found' });
     return;
   }
-  const asset = job.assets?.[0];
-  if (!asset?.download_url && !asset?.preview_url) {
-    res.status(404).json({ error: 'Asset not ready' });
+  if (job.status !== 'completed') {
+    res.status(409).json({ error: 'Video is not ready' });
     return;
   }
 
-  const assetUrl = asset.download_url || asset.preview_url;
+  const requestedVariant = req.query.variant;
+  const variant = requestedVariant || job.content_variant || 'source';
   try {
-    const assetResponse = await openaiClient.fetchAssetStream(assetUrl);
-    res.setHeader('Content-Type', assetResponse.headers.get('content-type') || 'video/mp4');
-    if (assetResponse.headers.get('content-length')) {
-      res.setHeader('Content-Length', assetResponse.headers.get('content-length'));
+    const remoteResponse = await openaiClient.streamVideoContent(job.sora_job_id, {
+      variant,
+      token: job.content_token,
+    });
+    res.setHeader('Content-Type', remoteResponse.headers.get('content-type') || 'video/mp4');
+    const contentLength = remoteResponse.headers.get('content-length');
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
     }
-    assetResponse.body.pipe(res);
+    remoteResponse.body.pipe(res);
   } catch (error) {
-    console.error('Failed to proxy asset:', error.message);
-    res.status(502).json({ error: 'Failed to fetch asset' });
+    console.error('Failed to proxy content:', error.message);
+    res.status(502).json({ error: 'Failed to fetch video content' });
   }
+});
+
+app.get('/api/videos/:id/stream', (req, res) => {
+  res.status(410).json({ error: 'This endpoint has moved to /api/videos/:id/media' });
 });
 
 app.get('*', (req, res) => {
@@ -91,3 +102,9 @@ app.listen(port, () => {
 });
 
 startPolling({ intervalMs: Number(process.env.POLL_INTERVAL_MS) || 10000 });
+
+function stripSensitiveFields(job) {
+  if (!job) return job;
+  const { content_token, content_token_expires_at, ...rest } = job;
+  return rest;
+}

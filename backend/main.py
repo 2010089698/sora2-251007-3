@@ -8,19 +8,13 @@ from datetime import datetime
 from typing import List, Optional
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from .database import (
-    VideoAsset,
-    VideoJob,
-    VideoStatusEnum,
-    create_engine_and_session,
-    init_db,
-    session_scope,
-)
+from .database import VideoJob, VideoStatusEnum, create_engine_and_session, init_db, session_scope
 from .openai_client import OpenAIVideosClient
 from .schemas import CreateVideoRequest, build_job_schema, generate_uuid
 
@@ -122,7 +116,7 @@ async def _poll_once(client: OpenAIVideosClient) -> None:
             if status == VideoStatusEnum.COMPLETED.value:
                 logger.info("Job %s completed", job.id)
                 job.error_message = None
-                _sync_assets(job, response)
+                _update_content_metadata(job, response)
             elif status == VideoStatusEnum.FAILED.value:
                 job.error_message = response.get("error", {}).get("message") or "Generation failed"
             else:
@@ -130,22 +124,30 @@ async def _poll_once(client: OpenAIVideosClient) -> None:
             session.add(job)
 
 
-def _sync_assets(job: VideoJob, response: dict) -> None:
-    existing_asset = job.assets[0] if job.assets else None
-    assets = response.get("result", {}).get("assets") or response.get("assets") or []
-    if not assets:
-        return
-    asset_payload = assets[0]
-    if existing_asset is None:
-        existing_asset = VideoAsset(id=generate_uuid(), job_id=job.id)
-        job.assets.append(existing_asset)
-    existing_asset.download_url = asset_payload.get("download_url")
-    existing_asset.preview_url = asset_payload.get("stream_url") or asset_payload.get("preview_url")
-    existing_asset.thumbnail_url = asset_payload.get("thumbnail_url")
-    existing_asset.duration_seconds = asset_payload.get("duration")
-    existing_asset.resolution = asset_payload.get("resolution")
-    file_size = asset_payload.get("file_size")
-    existing_asset.file_size = int(file_size) if file_size is not None else None
+def _update_content_metadata(job: VideoJob, response: dict) -> None:
+    payload = response.get("result") or response
+    variants = payload.get("content_variants") or payload.get("variants") or []
+    variant = (
+        payload.get("default_variant")
+        or payload.get("variant")
+        or (variants[0] if isinstance(variants, list) and variants else None)
+    )
+    if variant:
+        job.content_variant = variant
+    elif job.content_variant is None:
+        job.content_variant = "source"
+
+    token = payload.get("content_token") or payload.get("download_token")
+    if token:
+        job.content_token = token
+
+    expires_at = payload.get("content_token_expires_at") or payload.get("token_expires_at")
+    parsed_expires = _parse_datetime(expires_at)
+    if parsed_expires:
+        job.content_token_expires_at = parsed_expires
+
+    if job.content_ready_at is None:
+        job.content_ready_at = datetime.utcnow()
 
 
 @app.post("/api/videos")
@@ -170,6 +172,10 @@ async def create_video(
         raise HTTPException(status_code=502, detail=str(exc))
 
     job_id = generate_uuid()
+    payload = response.get("result") or response
+    token = payload.get("content_token") or payload.get("download_token")
+    expires_at = _parse_datetime(payload.get("content_token_expires_at") or payload.get("token_expires_at"))
+
     job = VideoJob(
         id=job_id,
         user_id=request.user_id or "demo-user",
@@ -179,6 +185,14 @@ async def create_video(
         aspect_ratio=request.aspect_ratio,
         duration=request.duration,
         format=request.format,
+        content_variant=(response.get("result") or response).get("default_variant")
+        if response.get("status") == VideoStatusEnum.COMPLETED.value
+        else None,
+        content_ready_at=datetime.utcnow()
+        if response.get("status") == VideoStatusEnum.COMPLETED.value
+        else None,
+        content_token=token,
+        content_token_expires_at=expires_at,
     )
     db.add(job)
     db.commit()
@@ -201,23 +215,51 @@ async def get_video(job_id: str, db: Session = Depends(get_db)):
 
 
 @app.get("/api/videos/{job_id}/media")
-async def get_video_media(job_id: str, db: Session = Depends(get_db)):
+async def get_video_media(
+    job_id: str,
+    variant: Optional[str] = Query(None, description="OpenAI content variant"),
+    db: Session = Depends(get_db),
+    client: OpenAIVideosClient = Depends(get_openai_client),
+):
     job: Optional[VideoJob] = db.query(VideoJob).filter(VideoJob.id == job_id).first()
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    if not job.assets:
-        raise HTTPException(status_code=404, detail="No assets available for this job yet")
-    asset = job.assets[0]
-    return {
-        "asset": {
-            "download_url": asset.download_url,
-            "preview_url": asset.preview_url,
-            "thumbnail_url": asset.thumbnail_url,
-            "duration_seconds": asset.duration_seconds,
-            "resolution": asset.resolution,
-            "file_size": asset.file_size,
-        }
-    }
+    if job.status != VideoStatusEnum.COMPLETED.value:
+        raise HTTPException(status_code=409, detail="Video is not ready")
+
+    chosen_variant = variant or job.content_variant or "source"
+    stream_ctx = client.stream_video_content(job.sora_job_id, chosen_variant, job.content_token)
+    try:
+        remote_response = await stream_ctx.__aenter__()
+    except httpx.HTTPStatusError as exc:
+        await stream_ctx.__aexit__(type(exc), exc, exc.__traceback__)
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except httpx.RequestError as exc:
+        await stream_ctx.__aexit__(type(exc), exc, exc.__traceback__)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    media_type = remote_response.headers.get("content-type") or "video/mp4"
+    content_length = remote_response.headers.get("content-length")
+
+    async def iterator():
+        try:
+            async for chunk in remote_response.aiter_bytes():
+                yield chunk
+        finally:
+            await stream_ctx.__aexit__(None, None, None)
+
+    streaming_response = StreamingResponse(iterator(), media_type=media_type)
+    if content_length:
+        streaming_response.headers["Content-Length"] = content_length
+    return streaming_response
+
+
+@app.get("/api/videos/{job_id}/stream")
+async def deprecated_stream_endpoint(job_id: str):
+    raise HTTPException(
+        status_code=410,
+        detail=f"This endpoint has moved to /api/videos/{job_id}/media",
+    )
 
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
@@ -233,3 +275,14 @@ def aspect_ratio_to_resolution(aspect_ratio: Optional[str]) -> Optional[str]:
         "4:3": "1440x1080",
     }
     return presets.get(aspect_ratio, aspect_ratio)
+
+
+def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None

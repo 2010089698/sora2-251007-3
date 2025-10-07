@@ -15,10 +15,29 @@ function startPolling({ intervalMs = 10000 } = {}) {
           if (!remote) {
             return;
           }
-          if (remote.status !== job.status || JSON.stringify(remote.assets) !== JSON.stringify(job.assets) || remote.error_message !== job.error_message) {
+          const nextStatus = remote.status || job.status;
+          const contentVariant = remote.content_variant || job.content_variant || null;
+          const contentToken = remote.content_token || job.content_token || null;
+          const contentTokenExpiresAt = remote.content_token_expires_at || job.content_token_expires_at || null;
+          const contentReadyAt =
+            nextStatus === 'completed'
+              ? job.content_ready_at || new Date().toISOString()
+              : job.content_ready_at;
+
+          if (
+            nextStatus !== job.status ||
+            contentVariant !== job.content_variant ||
+            contentToken !== job.content_token ||
+            contentTokenExpiresAt !== job.content_token_expires_at ||
+            remote.error_message !== job.error_message ||
+            contentReadyAt !== job.content_ready_at
+          ) {
             db.updateJob(job.id, {
-              status: remote.status || job.status,
-              assets: remote.assets || job.assets,
+              status: nextStatus,
+              content_variant: contentVariant,
+              content_token: contentToken,
+              content_token_expires_at: contentTokenExpiresAt,
+              content_ready_at: contentReadyAt,
               error_message: remote.error_message || null,
             });
           }

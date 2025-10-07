@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, validator
 
-from .database import VideoAsset, VideoJob
+from .database import VideoJob
 
 
 class CreateVideoRequest(BaseModel):
@@ -28,20 +28,6 @@ class CreateVideoRequest(BaseModel):
         return value
 
 
-class VideoAssetSchema(BaseModel):
-    id: str
-    download_url: Optional[str]
-    preview_url: Optional[str]
-    thumbnail_url: Optional[str]
-    duration_seconds: Optional[int]
-    resolution: Optional[str]
-    file_size: Optional[int]
-    created_at: datetime
-
-    class Config:
-        orm_mode = True
-
-
 class VideoJobSchema(BaseModel):
     id: str
     prompt: str
@@ -53,7 +39,8 @@ class VideoJobSchema(BaseModel):
     format: Optional[str]
     created_at: datetime
     updated_at: datetime
-    assets: List[VideoAssetSchema]
+    content_variant: Optional[str]
+    content_ready_at: Optional[datetime]
 
     class Config:
         orm_mode = True
@@ -61,10 +48,6 @@ class VideoJobSchema(BaseModel):
 
 def generate_uuid() -> str:
     return str(uuid4())
-
-
-def build_asset_schema(asset: VideoAsset) -> VideoAssetSchema:
-    return VideoAssetSchema.from_orm(asset)
 
 
 def build_job_schema(job: VideoJob) -> VideoJobSchema:

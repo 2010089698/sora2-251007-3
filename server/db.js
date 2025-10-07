@@ -22,19 +22,40 @@ db.exec(`
     format TEXT,
     sora_job_id TEXT NOT NULL,
     status TEXT NOT NULL,
-    assets_json TEXT,
+    content_variant TEXT,
+    content_ready_at TEXT,
+    content_token TEXT,
+    content_token_expires_at TEXT,
     error_message TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
 `);
 
+const existingColumns = db.prepare(`PRAGMA table_info(video_jobs)`).all().map((col) => col.name);
+const migrations = [];
+if (!existingColumns.includes('content_variant')) {
+  migrations.push(`ALTER TABLE video_jobs ADD COLUMN content_variant TEXT`);
+}
+if (!existingColumns.includes('content_ready_at')) {
+  migrations.push(`ALTER TABLE video_jobs ADD COLUMN content_ready_at TEXT`);
+}
+if (!existingColumns.includes('content_token')) {
+  migrations.push(`ALTER TABLE video_jobs ADD COLUMN content_token TEXT`);
+}
+if (!existingColumns.includes('content_token_expires_at')) {
+  migrations.push(`ALTER TABLE video_jobs ADD COLUMN content_token_expires_at TEXT`);
+}
+migrations.forEach((sql) => db.exec(sql));
+
 const insertStmt = db.prepare(`
   INSERT INTO video_jobs (
-    id, prompt, aspect_ratio, duration, format, sora_job_id, status, assets_json,
+    id, prompt, aspect_ratio, duration, format, sora_job_id, status,
+    content_variant, content_ready_at, content_token, content_token_expires_at,
     error_message, created_at, updated_at
   ) VALUES (
-    @id, @prompt, @aspect_ratio, @duration, @format, @sora_job_id, @status, @assets_json,
+    @id, @prompt, @aspect_ratio, @duration, @format, @sora_job_id, @status,
+    @content_variant, @content_ready_at, @content_token, @content_token_expires_at,
     @error_message, @created_at, @updated_at
   )
 `);
@@ -55,7 +76,10 @@ const pendingStmt = db.prepare(`
 const updateStmt = db.prepare(`
   UPDATE video_jobs
   SET status = @status,
-      assets_json = @assets_json,
+      content_variant = @content_variant,
+      content_ready_at = @content_ready_at,
+      content_token = @content_token,
+      content_token_expires_at = @content_token_expires_at,
       error_message = @error_message,
       updated_at = @updated_at
   WHERE id = @id
@@ -71,14 +95,29 @@ function mapRow(row) {
     format: row.format,
     sora_job_id: row.sora_job_id,
     status: row.status,
-    assets: row.assets_json ? JSON.parse(row.assets_json) : [],
+    content_variant: row.content_variant,
+    content_ready_at: row.content_ready_at,
+    content_token: row.content_token,
+    content_token_expires_at: row.content_token_expires_at,
     error_message: row.error_message,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
-function insertJob({ prompt, aspect_ratio, duration, format, sora_job_id, status, assets, error_message }) {
+function insertJob({
+  prompt,
+  aspect_ratio,
+  duration,
+  format,
+  sora_job_id,
+  status,
+  content_variant,
+  content_ready_at,
+  content_token,
+  content_token_expires_at,
+  error_message,
+}) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   insertStmt.run({
@@ -89,7 +128,10 @@ function insertJob({ prompt, aspect_ratio, duration, format, sora_job_id, status
     format: format || null,
     sora_job_id,
     status,
-    assets_json: assets && assets.length ? JSON.stringify(assets) : null,
+    content_variant: content_variant || null,
+    content_ready_at: content_ready_at || null,
+    content_token: content_token || null,
+    content_token_expires_at: content_token_expires_at || null,
     error_message: error_message || null,
     created_at: now,
     updated_at: now,
@@ -109,12 +151,22 @@ function getPendingJobs() {
   return pendingStmt.all().map(mapRow);
 }
 
-function updateJob(id, { status, assets, error_message }) {
+function updateJob(id, {
+  status,
+  content_variant,
+  content_ready_at,
+  content_token,
+  content_token_expires_at,
+  error_message,
+}) {
   const now = new Date().toISOString();
   updateStmt.run({
     id,
     status,
-    assets_json: assets && assets.length ? JSON.stringify(assets) : null,
+    content_variant: content_variant || null,
+    content_ready_at: content_ready_at || null,
+    content_token: content_token || null,
+    content_token_expires_at: content_token_expires_at || null,
     error_message: error_message || null,
     updated_at: now,
   });

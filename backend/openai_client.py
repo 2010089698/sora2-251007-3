@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from contextlib import asynccontextmanager
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -50,11 +51,37 @@ class OpenAIVideosClient:
             logger.debug("Polled job %s -> %s", job_id, data.get("status"))
             return data
 
-    def _headers(self) -> Dict[str, str]:
+    @asynccontextmanager
+    async def stream_video_content(
+        self,
+        job_id: str,
+        variant: Optional[str] = None,
+        token: Optional[str] = None,
+    ):
+        """Stream the generated video content from OpenAI."""
+
+        url = f"{self.api_base}/videos/{job_id}/content"
+        params = {}
+        if variant:
+            params["variant"] = variant
+        if token:
+            params["token"] = token
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream(
+                "GET",
+                url,
+                headers=self._headers(include_json=False),
+                params=params or None,
+            ) as response:
+                response.raise_for_status()
+                yield response
+
+    def _headers(self, *, include_json: bool = True) -> Dict[str, str]:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
         }
+        if include_json:
+            headers["Content-Type"] = "application/json"
         if self.beta_header:
             headers["OpenAI-Beta"] = self.beta_header
         return headers

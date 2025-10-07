@@ -33,19 +33,20 @@
   - `POST /api/videos` — validate prompt, forward to OpenAI Videos API (`POST /v1/videos`), persist job metadata.
   - `GET /api/videos` — return all stored jobs ordered by creation date.
   - `GET /api/videos/:id` — fetch a single job record.
-  - `GET /api/videos/:id/stream` — proxy the first asset stream/download URL for convenience.
+  - `GET /api/videos/:id/media` — proxy OpenAI's `/videos/{job_id}/content?variant=...` stream after completion.
 - **Persistence**
-  - SQLite via `better-sqlite3` stores job fields: prompt, Sora job ID, status, assets, error message, timestamps.
+  - SQLite via `better-sqlite3` stores job fields: prompt, Sora job ID, status, content metadata (variant/token expiry), error message, timestamps.
 - **OpenAI Integration**
   - Uses the Videos API with headers `Authorization: Bearer <OPENAI_API_KEY>` and `OpenAI-Beta: sora2=v1`.
-  - Normalizes heterogeneous asset payloads so the frontend receives consistent `{ preview_url, download_url, duration_seconds, resolution }` metadata.
+  - Once a job reaches `completed`, the backend no longer stores static asset URLs. Instead it proxies playback requests to OpenAI's `GET /videos/{id}/content` endpoint, forwarding the desired `variant` (for example `source`, `preview`, etc.).
+  - Any transient download credentials (such as short-lived tokens or expiry timestamps) are kept server-side so the browser always talks to the local `/api/videos/{id}/media` endpoint.
 - **Polling Loop**
   - `setInterval` every 10s queries pending jobs (`status` not in `completed/failed/cancelled`).
-  - Updates local records when OpenAI reports status changes or when assets become available.
+  - Updates local records when OpenAI reports status changes or when video content becomes streamable.
 
 ## 5. Frontend Components (Vanilla JS)
 - **Prompt Form** — collects prompt text, aspect ratio, optional duration, and format.
-- **Job List** — polls `GET /api/videos` every 10s, showing status badges, metadata, and inline `<video>` playback when assets exist.
+- **Job List** — polls `GET /api/videos` every 10s, showing status badges, metadata, and inline `<video>` playback once `/videos/{id}/content` is available.
 - **Feedback Messages** — notifies users about submission success/failure.
 
 ## 6. Data Model
@@ -58,7 +59,9 @@
 | `format` | Preferred output format (e.g., `mp4`). |
 | `sora_job_id` | Identifier returned by OpenAI. |
 | `status` | `queued`, `in_progress`, `completed`, `failed`, etc. |
-| `assets` | JSON array of normalized asset metadata. |
+| `content_variant` | The default variant name used when proxying `/videos/{id}/content`. |
+| `content_ready_at` | Timestamp recorded when streaming becomes available. |
+| `content_token` / `content_token_expires_at` | (Server-side only) Optional temporary credentials returned by OpenAI. |
 | `error_message` | Failure reason if reported by the API. |
 | `created_at` / `updated_at` | ISO timestamps for auditing. |
 
@@ -77,13 +80,12 @@ POST /api/videos
 ```json
 201 Created
 {
-  "job": {
-    "id": "local-uuid",
-    "prompt": "A cozy campfire...",
-    "status": "queued",
-    "sora_job_id": "job-abc123",
-    "assets": []
-  }
+    "job": {
+      "id": "local-uuid",
+      "prompt": "A cozy campfire...",
+      "status": "queued",
+      "sora_job_id": "job-abc123"
+    }
 }
 ```
 - **Job Listing**
@@ -94,14 +96,8 @@ GET /api/videos
     {
       "id": "local-uuid",
       "status": "completed",
-      "assets": [
-        {
-          "preview_url": "https://.../stream.m3u8",
-          "download_url": "https://.../video.mp4",
-          "resolution": "1920x1080",
-          "duration_seconds": 8
-        }
-      ]
+      "content_variant": "source",
+      "content_ready_at": "2024-03-15T12:34:56Z"
     }
   ]
 }
