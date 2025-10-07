@@ -51,7 +51,7 @@ app.post('/api/videos', async (req, res) => {
       size: resolvedSize,
       sora_job_id: remoteJob.id,
       status: remoteJob.status || 'queued',
-      assets: remoteJob.assets || [],
+      variants: remoteJob.variants || [],
       error_message: remoteJob.error_message || null,
     });
 
@@ -62,29 +62,41 @@ app.post('/api/videos', async (req, res) => {
   }
 });
 
-app.get('/api/videos/:id/stream', async (req, res) => {
+app.get('/api/videos/:id/media', async (req, res) => {
   const job = db.getJob(req.params.id);
   if (!job) {
     res.status(404).json({ error: 'Job not found' });
     return;
   }
-  const asset = job.assets?.[0];
-  if (!asset?.download_url && !asset?.preview_url) {
-    res.status(404).json({ error: 'Asset not ready' });
+
+  const variants = Array.isArray(job.variants) ? job.variants : [];
+  const requestedVariant = typeof req.query.variant === 'string' ? req.query.variant : undefined;
+  const variantToUse = requestedVariant || variants[0];
+
+  if (!variantToUse) {
+    res.status(404).json({ error: 'Variant not available yet' });
     return;
   }
 
-  const assetUrl = asset.download_url || asset.preview_url;
   try {
-    const assetResponse = await openaiClient.fetchAssetStream(assetUrl);
-    res.setHeader('Content-Type', assetResponse.headers.get('content-type') || 'video/mp4');
-    if (assetResponse.headers.get('content-length')) {
-      res.setHeader('Content-Length', assetResponse.headers.get('content-length'));
+    const upstream = await openaiClient.streamVideoContent(job.sora_job_id, variantToUse);
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+
+    const contentDisposition = upstream.headers.get('content-disposition');
+    if (contentDisposition) {
+      res.setHeader('Content-Disposition', contentDisposition);
     }
-    assetResponse.body.pipe(res);
+
+    const contentLength = upstream.headers.get('content-length');
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+
+    upstream.body.pipe(res);
   } catch (error) {
-    console.error('Failed to proxy asset:', error.message);
-    res.status(502).json({ error: 'Failed to fetch asset' });
+    console.error('Failed to proxy video content:', error.message);
+    res.status(502).json({ error: 'Failed to fetch video content' });
   }
 });
 

@@ -15,10 +15,14 @@ function startPolling({ intervalMs = 10000 } = {}) {
           if (!remote) {
             return;
           }
-          if (remote.status !== job.status || JSON.stringify(remote.assets) !== JSON.stringify(job.assets) || remote.error_message !== job.error_message) {
+          if (
+            remote.status !== job.status ||
+            JSON.stringify(remote.variants) !== JSON.stringify(job.variants) ||
+            remote.error_message !== job.error_message
+          ) {
             db.updateJob(job.id, {
               status: remote.status || job.status,
-              assets: remote.assets || job.assets,
+              variants: remote.variants || job.variants,
               error_message: remote.error_message || null,
             });
           }
