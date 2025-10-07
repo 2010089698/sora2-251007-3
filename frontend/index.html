@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sora2 Video MVP</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="hero">
+        <h1>Sora2 Video Generator</h1>
+        <p>テキストプロンプトから動画を生成し、進捗を確認して完成した動画を再生できます。</p>
+      </section>
+      <section class="card">
+        <h2>動画を生成</h2>
+        <form id="prompt-form">
+          <label for="prompt">プロンプト</label>
+          <textarea id="prompt" name="prompt" required minlength="4" placeholder="例: 夕暮れの東京をドローンで撮影したような映像"></textarea>
+
+          <div class="form-grid">
+            <label for="aspect_ratio">アスペクト比</label>
+            <select id="aspect_ratio" name="aspect_ratio">
+              <option value="16:9">16:9 (横長)</option>
+              <option value="9:16">9:16 (縦長)</option>
+              <option value="1:1">1:1 (スクエア)</option>
+              <option value="4:3">4:3</option>
+            </select>
+
+            <label for="duration">秒数</label>
+            <input type="number" id="duration" name="duration" value="8" min="1" max="60" />
+
+            <label for="format">形式</label>
+            <select id="format" name="format">
+              <option value="mp4">mp4</option>
+              <option value="mov">mov</option>
+              <option value="webm">webm</option>
+            </select>
+          </div>
+
+          <button type="submit">生成リクエストを送信</button>
+        </form>
+        <div id="form-message" role="alert"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>ジョブ状況</h2>
+          <button id="refresh-button" class="secondary">最新の状態を取得</button>
+        </div>
+        <div id="jobs-list" class="jobs-list"></div>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
