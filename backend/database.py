@@ -39,9 +39,8 @@ class VideoJob(Base):
     sora_job_id = Column(String(255), nullable=False, unique=True)
     status = Column(String(32), nullable=False, default=VideoStatusEnum.QUEUED.value)
     error_message = Column(Text, nullable=True)
-    aspect_ratio = Column(String(16), nullable=True)
-    duration = Column(Integer, nullable=True)
-    format = Column(String(16), nullable=True)
+    seconds = Column(Integer, nullable=True)
+    size = Column(String(16), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

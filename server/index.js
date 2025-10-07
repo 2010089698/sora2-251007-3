@@ -26,23 +26,29 @@ app.get('/api/videos/:id', (req, res) => {
 });
 
 app.post('/api/videos', async (req, res) => {
-  const { prompt, aspect_ratio, duration, format } = req.body || {};
+  const { prompt, seconds, size } = req.body || {};
   if (!prompt || typeof prompt !== 'string') {
     res.status(400).json({ error: 'prompt is required' });
     return;
   }
 
   try {
-    const remoteJob = await openaiClient.createVideoJob({ prompt, aspect_ratio, duration, format });
+    const remoteJob = await openaiClient.createVideoJob({ prompt, seconds, size });
     if (!remoteJob?.id) {
       throw new Error('Invalid response from OpenAI Videos API');
     }
 
+    const parsedSeconds = Number(seconds);
+    const sanitizedSeconds = Number.isFinite(parsedSeconds) ? parsedSeconds : null;
+    const remoteSeconds = Number(remoteJob.seconds);
+    const remoteSecondsValue = Number.isFinite(remoteSeconds) ? remoteSeconds : null;
+    const resolvedSeconds = sanitizedSeconds || remoteSecondsValue;
+    const resolvedSize = size || remoteJob.size || null;
+
     const jobRecord = db.insertJob({
       prompt,
-      aspect_ratio,
-      duration,
-      format,
+      seconds: resolvedSeconds,
+      size: resolvedSize,
       sora_job_id: remoteJob.id,
       status: remoteJob.status || 'queued',
       assets: remoteJob.assets || [],

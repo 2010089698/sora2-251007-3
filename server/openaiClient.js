@@ -46,18 +46,19 @@ function normalizeJobResponse(payload) {
     id: payload.id,
     status: payload.status,
     error_message: payload.error?.message || null,
+    seconds: payload.seconds || payload.duration || null,
+    size: payload.size || payload.resolution || null,
     assets: normalizeAssets(payload),
   };
 }
 
-async function createVideoJob({ prompt, aspect_ratio, duration, format }) {
+async function createVideoJob({ prompt, seconds, size }) {
   const apiKey = ensureApiKey();
   const body = {
     model: VIDEO_MODEL,
     prompt,
-    aspect_ratio,
-    duration,
-    format,
+    seconds,
+    size,
   };
 
   Object.keys(body).forEach((key) => {

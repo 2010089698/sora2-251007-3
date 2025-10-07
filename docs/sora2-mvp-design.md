@@ -45,7 +45,7 @@
   - Updates local records when OpenAI reports status changes or when assets become available.
 
 ## 5. Frontend Components (Vanilla JS)
-- **Prompt Form** — collects prompt text, aspect ratio, optional duration, and format.
+- **Prompt Form** — collects prompt text together with the officially supported `seconds` (4 / 8 / 12) and `size` presets.
 - **Job List** — polls `GET /api/videos` every 10s, showing status badges, metadata, and inline `<video>` playback when assets exist.
 - **Feedback Messages** — notifies users about submission success/failure.
 
@@ -54,9 +54,8 @@
 |-------|-------------|
 | `id` | Local UUID for the job card displayed in the UI. |
 | `prompt` | Submitted text prompt. |
-| `aspect_ratio` | Optional aspect ratio passed to OpenAI. |
-| `duration` | Optional duration in seconds. |
-| `format` | Preferred output format (e.g., `mp4`). |
+| `seconds` | Requested clip length. Allowed values: `4`, `8`, `12`. |
+| `size` | Requested resolution preset (`480x480`, `720x1280`, `1080x1920`, `1920x1080`, `2560x1440`). |
 | `sora_job_id` | Identifier returned by OpenAI. |
 | `status` | `queued`, `in_progress`, `completed`, `failed`, etc. |
 | `assets` | JSON array of normalized asset metadata. |
@@ -69,9 +68,8 @@
 POST /api/videos
 {
   "prompt": "A cozy campfire at night in the forest",
-  "aspect_ratio": "16:9",
-  "duration": 8,
-  "format": "mp4"
+  "seconds": 8,
+  "size": "1920x1080"
 }
 ```
 - **Create Video Response**
@@ -81,6 +79,8 @@ POST /api/videos
   "job": {
     "id": "local-uuid",
     "prompt": "A cozy campfire...",
+    "seconds": 8,
+    "size": "1920x1080",
     "status": "queued",
     "sora_job_id": "job-abc123",
     "assets": []
@@ -94,6 +94,8 @@ GET /api/videos
   "jobs": [
     {
       "id": "local-uuid",
+      "seconds": 8,
+      "size": "1920x1080",
       "status": "completed",
       "assets": [
         {

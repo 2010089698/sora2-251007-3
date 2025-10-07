@@ -9,12 +9,11 @@ async function submitPrompt(event) {
   formMessage.className = "info";
 
   const formData = new FormData(form);
-  const durationValue = Number(formData.get("duration"));
+  const secondsValue = Number(formData.get("seconds"));
   const payload = {
     prompt: formData.get("prompt"),
-    aspect_ratio: formData.get("aspect_ratio"),
-    duration: Number.isFinite(durationValue) && durationValue > 0 ? durationValue : undefined,
-    format: formData.get("format"),
+    seconds: Number.isFinite(secondsValue) ? secondsValue : undefined,
+    size: formData.get("size"),
   };
 
   try {
@@ -76,8 +75,8 @@ function renderJobs(jobs) {
       mediaSection = `
         <video controls src="${source}" preload="none"></video>
         <div class="job-meta">
-          <small>解像度: ${asset.resolution || "-"}</small><br/>
-          <small>長さ: ${asset.duration_seconds || "-"} 秒</small>
+        <small>解像度: ${asset.resolution || job.size || "-"}</small><br/>
+          <small>長さ: ${asset.duration_seconds || job.seconds || "-"} 秒</small>
         </div>
         <div class="job-actions">
           ${asset.download_url ? `<a class="secondary" href="${asset.download_url}" target="_blank" rel="noopener">ダウンロード</a>` : ""}
@@ -95,6 +94,8 @@ function renderJobs(jobs) {
       </div>
       <div class="job-body">
         <small>OpenAI ジョブID: ${job.sora_job_id}</small><br/>
+        ${job.size ? `<small>解像度プリセット: ${job.size}</small><br/>` : ""}
+        ${job.seconds ? `<small>指定秒数: ${job.seconds} 秒</small><br/>` : ""}
         <small>更新: ${updatedAt}</small>
         ${job.error_message ? `<p class="error">${job.error_message}</p>` : ""}
       </div>
